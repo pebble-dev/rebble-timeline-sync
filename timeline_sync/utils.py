@@ -1,6 +1,17 @@
 import requests
-from flask import request, abort
+from flask import request, abort, jsonify
 from .settings import config
+import datetime
+
+
+ERROR_CODES = {
+    400:	{"errorCode": "INVALID_JSON"},
+    403:	{"errorCode": "INVALID_API_KEY"},
+    410:	{"errorCode": "INVALID_USER_TOKEN"},
+    429:	{"errorCode": "RATE_LIMIT_EXCEEDED"},
+}
+
+ISO_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 
 # Copied from https://github.com/pebble-dev/rebble-appstore-api/blob/master/appstore/utils.py
 # Really should be in common library
@@ -30,3 +41,17 @@ def get_uid():
     if result.status_code != 200:
         abort(401)
     return result.json()['uid']
+
+
+def api_error(code):
+    response = jsonify(ERROR_CODES[code])
+    response.status_code = code
+    return response
+
+
+def parse_time(time_str):
+    return datetime.datetime.strptime(time_str, ISO_FORMAT)
+
+
+def time_to_str(time):
+    return time.strftime(ISO_FORMAT)
