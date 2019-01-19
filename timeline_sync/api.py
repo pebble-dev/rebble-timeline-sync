@@ -1,9 +1,7 @@
 from flask import Blueprint, jsonify, url_for, request
-import datetime
 import secrets
 from .models import db, SandboxToken, TimelinePin, UserTimeline
 from .utils import get_uid, api_error
-import uuid
 
 
 api = Blueprint('api', __name__)
@@ -67,29 +65,35 @@ def user_pin(pin_id):
 
         pin = TimelinePin.query.filter_by(app_id=app_id, user_id=user_id, id=pin_id).one_or_none()
         if pin is None:
-            pin = TimelinePin.from_json(pin_json)
+            pin = TimelinePin.from_json(pin_json, app_id, user_id, data_source, 'web', '[]')
             if pin is None:
                 return api_error(400)
-
-            pin.guid = uuid.uuid4()
-            pin.app_id = app_id
-            pin.data_source = data_source
-            pin.source = 'web'
-            pin.create_time = datetime.datetime.utcnow()
-            pin.update_time = pin.create_time  # TODO: is this right?
-            pin.topic_keys = '[]'  # TODO: proper pin.topic_keys
 
             user_timeline = UserTimeline(user_id=user_id,
                                          type='timeline.pin.create',
                                          pin=pin)
+            db.session.add(pin)
             db.session.add(user_timeline)
             db.session.commit()
         else:
-            pass  # TODO: update pin
+            try:
+                pin.update_from_json(pin_json)
+                user_timeline = UserTimeline(user_id=user_id,
+                                             type='timeline.pin.create',  # actually it's update, but app wants create
+                                             pin=pin)
+                db.session.add(pin)
+                db.session.add(user_timeline)
+                db.session.commit()
+            except KeyError:
+                return api_error(400)
 
     elif request.method == 'DELETE':
-        pass  # TODO delete pin
-
+        pin = TimelinePin.query.filter_by(app_id=app_id, user_id=user_id, id=pin_id).get_or_404()
+        user_timeline = UserTimeline(user_id=user_id,
+                                     type='timeline.pin.delete',
+                                     pin=pin)
+        db.session.add(user_timeline)
+        db.session.commit()
     return 'OK'
 
 

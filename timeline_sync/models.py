@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from .utils import parse_time, time_to_str
 import uuid
 import json
+import datetime
 
 
 class GUID(TypeDecorator):
@@ -102,20 +103,32 @@ class TimelinePin(db.Model):
     topic_keys = db.Column(db.String(8), nullable=False)  # TODO: proper topicKeys
 
     @classmethod
-    def from_json(cls, pin_json):
+    def from_json(cls, pin_json, app_id, user_id, data_source, source, topic_keys):
         try:
-            return cls(
+            pin = cls(
+                guid=uuid.uuid4(),
                 id=pin_json['id'],
-                time=parse_time(pin_json['time']),
-                duration=pin_json.get('duration'),
-                create_notification=TimelineNotification.from_json(pin_json.get('createNotification')),
-                update_notification=TimelineNotification.from_json(pin_json.get('updateNotification')),
-                layout=TimelineLayout.from_json(pin_json['layout']),
-                reminders=TimelineReminder.from_json(pin_json.get('reminders')),
-                actions=TimelineAction.from_json(pin_json.get('actions'))
+                app_id=app_id,
+                user_id=user_id,
+                data_source=data_source,
+                source=source,
+                create_time=datetime.datetime.utcnow(),
+                topic_keys=topic_keys   # TODO: proper pin.topic_keys
             )
+            pin.update_from_json(pin_json)
+            return pin
         except KeyError:
             return None
+
+    def update_from_json(self, pin_json):
+        self.time = parse_time(pin_json['time'])
+        self.duration = pin_json.get('duration')
+        self.create_notification = TimelineNotification.from_json(pin_json.get('createNotification'))
+        self.update_notification = TimelineNotification.from_json(pin_json.get('updateNotification'))
+        self.layout = TimelineLayout.from_json(pin_json['layout'])
+        self.reminders = TimelineReminder.from_json(pin_json.get('reminders'))
+        self.actions = TimelineAction.from_json(pin_json.get('actions'))
+        self.update_time = datetime.datetime.utcnow()
 
     def to_json(self):
         result = {
@@ -231,10 +244,10 @@ class UserTimeline(db.Model):
     # TODO: topicKey, subDate
 
     def to_json(self):
-        if self.type == 'timeline.pin.create':
+        if self.type == 'timeline.pin.create' or self.type == 'timeline.pin.delete':
             return {"type": self.type, "data": self.pin.to_json()}
         else:
-            return None  # TODO: timeline.topic.subscribe, timeline.topic.unsubscribe, timeline.pin.delete
+            return None  # TODO: timeline.topic.subscribe, timeline.topic.unsubscribe
 
 
 def init_app(app):
