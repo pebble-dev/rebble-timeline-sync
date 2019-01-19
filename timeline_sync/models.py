@@ -69,14 +69,14 @@ db = SQLAlchemy()
 class SandboxToken(db.Model):
     __tablename__ = "sandbox_tokens"
     user_id = db.Column(db.Integer, primary_key=True)
-    app_id = db.Column(db.String(24), primary_key=True)
+    app_uuid = db.Column(GUID, primary_key=True)
     token = db.Column(db.String(32), index=True)
 
 
 class TimelinePin(db.Model):
     __tablename__ = "timeline_pins"
     guid = db.Column(GUID, primary_key=True)
-    app_id = db.Column(db.String(24), nullable=False)
+    app_uuid = db.Column(GUID, nullable=False)
     user_id = db.Column(db.Integer, nullable=True)
     id = db.Column(db.String(32), nullable=False)
     time = db.Column(db.DateTime, nullable=False)
@@ -103,12 +103,12 @@ class TimelinePin(db.Model):
     topic_keys = db.Column(db.String(8), nullable=False)  # TODO: proper topicKeys
 
     @classmethod
-    def from_json(cls, pin_json, app_id, user_id, data_source, source, topic_keys):
+    def from_json(cls, pin_json, app_uuid, user_id, data_source, source, topic_keys):
         try:
             pin = cls(
                 guid=uuid.uuid4(),
                 id=pin_json['id'],
-                app_id=app_id,
+                app_uuid=app_uuid,
                 user_id=user_id,
                 data_source=data_source,
                 source=source,
@@ -156,7 +156,7 @@ class TimelinePin(db.Model):
         return result
 
 
-db.Index('timeline_pin_appid_uid_pinid_index', TimelinePin.app_id, TimelinePin.user_id, TimelinePin.id, unique=True)
+db.Index('timeline_pin_appuuid_uid_pinid_index', TimelinePin.app_uuid, TimelinePin.user_id, TimelinePin.id, unique=True)
 
 
 class TimelineNotification(db.Model):
