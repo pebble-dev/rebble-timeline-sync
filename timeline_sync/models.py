@@ -75,15 +75,23 @@ class SandboxToken(db.Model):
 class TimelinePin(db.Model):
     __tablename__ = "timeline_pins"
     guid = db.Column(GUID, primary_key=True)
-    app_id = db.Column(db.String(24))
+    app_id = db.Column(db.String(24), nullable=False)
+    user_id = db.Column(db.Integer, nullable=True)
     id = db.Column(db.String(32), nullable=False)
     time = db.Column(db.DateTime, nullable=False)
     duration = db.Column(db.Integer)
-    create_notification = db.relationship('TimelineNotification', lazy=False, uselist=False,
-                                          cascade="all, delete-orphan")
-    update_notification = db.relationship('TimelineNotification', lazy=False, uselist=False,
-                                          cascade="all, delete-orphan")
-    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, cascade="all, delete-orphan")
+
+    create_notification_id = db.Column(db.Integer, db.ForeignKey('timeline_notifications.id'))
+    create_notification = db.relationship('TimelineNotification', lazy=False, uselist=False, single_parent=True,
+                                          cascade="all, delete-orphan", foreign_keys=[create_notification_id])
+
+    update_notification_id = db.Column(db.Integer, db.ForeignKey('timeline_notifications.id'))
+    update_notification = db.relationship('TimelineNotification', lazy=False, uselist=False, single_parent=True,
+                                          cascade="all, delete-orphan", foreign_keys=[update_notification_id])
+
+    layout_id = db.Column(db.Integer, db.ForeignKey('timeline_layouts.id'), nullable=False)
+    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
+
     reminders = db.relationship('TimelineReminder', lazy=False, uselist=True, cascade="all, delete-orphan")
     actions = db.relationship('TimelineAction', lazy=False, uselist=True, cascade="all, delete-orphan")
 
@@ -135,16 +143,16 @@ class TimelinePin(db.Model):
         return result
 
 
-db.Index('timeline_pin_app_id_index', TimelinePin.app_id, TimelinePin.id, unique=True)
+db.Index('timeline_pin_appid_uid_pinid_index', TimelinePin.app_id, TimelinePin.user_id, TimelinePin.id, unique=True)
 
 
 class TimelineNotification(db.Model):
     __tablename__ = "timeline_notifications"
     id = db.Column(db.Integer, primary_key=True)
     time = db.Column(db.DateTime)
-    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, cascade="all, delete-orphan")
 
-    pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
+    layout_id = db.Column(db.Integer, db.ForeignKey('timeline_layouts.id'), nullable=False)
+    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
 
     @classmethod
     def from_json(cls, notification_json):
@@ -161,10 +169,6 @@ class TimelineLayout(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     layout_json = db.Column(JsonEncodedDict)
 
-    pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
-    notification_id = db.Column(db.Integer, db.ForeignKey('timeline_notifications.id'))
-    reminder_id = db.Column(db.Integer, db.ForeignKey('timeline_reminders.id'))
-
     @classmethod
     def from_json(cls, layout_json):
         if layout_json is None:
@@ -179,7 +183,9 @@ class TimelineReminder(db.Model):
     __tablename__ = "timeline_reminders"
     id = db.Column(db.Integer, primary_key=True)
     time = db.Column(db.DateTime)
-    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, cascade="all, delete-orphan")
+
+    layout_id = db.Column(db.Integer, db.ForeignKey('timeline_layouts.id'), nullable=False)
+    layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
 
     pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
 
@@ -219,6 +225,7 @@ class UserTimeline(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, index=True)
     type = db.Column(db.String(32))
+
     pin = db.relationship('TimelinePin', lazy=False, uselist=False)
     pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
     # TODO: topicKey, subDate
@@ -233,4 +240,4 @@ class UserTimeline(db.Model):
 def init_app(app):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
-    # db.create_all(app=app)
+    db.create_all(app=app)

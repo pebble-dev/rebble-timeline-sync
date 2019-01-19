@@ -65,7 +65,7 @@ def user_pin(pin_id):
         if pin_json is None or pin_json.get('id') != pin_id:
             return api_error(400)
 
-        pin = TimelinePin.query.filter_by(app_id=app_id, id=pin_id).one_or_none()
+        pin = TimelinePin.query.filter_by(app_id=app_id, user_id=user_id, id=pin_id).one_or_none()
         if pin is None:
             pin = TimelinePin.from_json(pin_json)
             if pin is None:
