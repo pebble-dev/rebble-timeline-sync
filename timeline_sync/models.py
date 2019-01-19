@@ -1,66 +1,8 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.types import TypeDecorator, CHAR, TEXT
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .utils import parse_time, time_to_str
 import uuid
-import json
 import datetime
-
-
-class GUID(TypeDecorator):
-    """Platform-independent GUID type.
-
-    Uses PostgreSQL's UUID type, otherwise uses
-    CHAR(32), storing as stringified hex values.
-
-    """
-    impl = CHAR
-
-    def load_dialect_impl(self, dialect):
-        if dialect.name == 'postgresql':
-            return dialect.type_descriptor(UUID())
-        else:
-            return dialect.type_descriptor(CHAR(32))
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return value
-        elif dialect.name == 'postgresql':
-            return str(value)
-        else:
-            if not isinstance(value, uuid.UUID):
-                return "%.32x" % uuid.UUID(value).int
-            else:
-                # hexstring
-                return "%.32x" % value.int
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return value
-        else:
-            if not isinstance(value, uuid.UUID):
-                value = uuid.UUID(value)
-            return value
-
-
-class JsonEncodedDict(TypeDecorator):
-    """
-        Enables JSON storage by encoding and decoding on the fly.
-    """
-
-    impl = TEXT
-
-    def process_bind_param(self, value, dialect):
-        if value is None:
-            return '{}'
-        else:
-            return json.dumps(value)
-
-    def process_result_value(self, value, dialect):
-        if value is None:
-            return {}
-        else:
-            return json.loads(value)
 
 
 db = SQLAlchemy()
@@ -69,14 +11,14 @@ db = SQLAlchemy()
 class SandboxToken(db.Model):
     __tablename__ = "sandbox_tokens"
     user_id = db.Column(db.Integer, primary_key=True)
-    app_uuid = db.Column(GUID, primary_key=True)
-    token = db.Column(db.String(32), index=True)
+    app_uuid = db.Column(UUID(as_uuid=True), primary_key=True)
+    token = db.Column(db.String, index=True)
 
 
 class TimelinePin(db.Model):
     __tablename__ = "timeline_pins"
-    guid = db.Column(GUID, primary_key=True)
-    app_uuid = db.Column(GUID, nullable=False)
+    guid = db.Column(UUID(as_uuid=True), primary_key=True)
+    app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
     user_id = db.Column(db.Integer, nullable=True)
     id = db.Column(db.String(32), nullable=False)
     time = db.Column(db.DateTime, nullable=False)
@@ -180,7 +122,7 @@ class TimelineNotification(db.Model):
 class TimelineLayout(db.Model):
     __tablename__ = "timeline_layouts"
     id = db.Column(db.Integer, primary_key=True)
-    layout_json = db.Column(JsonEncodedDict)
+    layout_json = db.Column(JSONB)
 
     @classmethod
     def from_json(cls, layout_json):
@@ -200,7 +142,7 @@ class TimelineReminder(db.Model):
     layout_id = db.Column(db.Integer, db.ForeignKey('timeline_layouts.id'), nullable=False)
     layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
 
-    pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
+    pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid'))
 
     @classmethod
     def from_json(cls, reminders_json):
@@ -220,9 +162,9 @@ class TimelineReminder(db.Model):
 class TimelineAction(db.Model):
     __tablename__ = "timeline_actions"
     id = db.Column(db.Integer, primary_key=True)
-    action_json = db.Column(JsonEncodedDict)
+    action_json = db.Column(JSONB)
 
-    pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
+    pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid'))
 
     @classmethod
     def from_json(cls, actions_json):
@@ -240,7 +182,7 @@ class UserTimeline(db.Model):
     type = db.Column(db.String(32))
 
     pin = db.relationship('TimelinePin', lazy=False, uselist=False)
-    pin_id = db.Column(GUID, db.ForeignKey('timeline_pins.guid'))
+    pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid'))
     # TODO: topicKey, subDate
 
     def to_json(self):

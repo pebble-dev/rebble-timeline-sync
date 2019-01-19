@@ -90,7 +90,7 @@ def user_pin(pin_id):
                 return api_error(400)
 
     elif request.method == 'DELETE':
-        pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).get_or_404()
+        pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).first_or_404()
         user_timeline = UserTimeline(user_id=user_id,
                                      type='timeline.pin.delete',
                                      pin=pin)
