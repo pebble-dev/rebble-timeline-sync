@@ -1,6 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from .utils import parse_time, time_to_str
+from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
+from .utils import parse_time, time_to_str, valid_time
 import uuid
 import datetime
 
@@ -42,7 +42,7 @@ class TimelinePin(db.Model):
     source = db.Column(db.String(8), nullable=False)
     create_time = db.Column(db.DateTime, nullable=False)
     update_time = db.Column(db.DateTime, nullable=False)
-    topic_keys = db.Column(db.String(8), nullable=False)  # TODO: proper topicKeys
+    topic_keys = db.Column(ARRAY(db.String), nullable=False)
 
     @classmethod
     def from_json(cls, pin_json, app_uuid, user_id, data_source, source, topic_keys):
@@ -55,17 +55,17 @@ class TimelinePin(db.Model):
                 data_source=data_source,
                 source=source,
                 create_time=datetime.datetime.utcnow(),
-                topic_keys=topic_keys   # TODO: proper pin.topic_keys
+                topic_keys=topic_keys
             )
             pin.update_from_json(pin_json)
             return pin
-        except KeyError:
+        except (KeyError, ValueError):
             return None
 
     def update_from_json(self, pin_json):
-        self.time = parse_time(pin_json['time'])
+        self.time = valid_time(parse_time(pin_json['time']))
         self.duration = pin_json.get('duration')
-        self.create_notification = TimelineNotification.from_json(pin_json.get('createNotification'))
+        self.create_notification = TimelineNotification.from_json(pin_json.get('createNotification'), optional_time=True)
         self.update_notification = TimelineNotification.from_json(pin_json.get('updateNotification'))
         self.layout = TimelineLayout.from_json(pin_json['layout'])
         self.reminders = TimelineReminder.from_json(pin_json.get('reminders'))
@@ -87,9 +87,9 @@ class TimelinePin(db.Model):
         if self.duration is not None:
             result["duration"] = self.duration
         if self.create_notification is not None:
-            result["createNotification"] = self.create_notification
+            result["createNotification"] = self.create_notification.to_json()
         if self.update_notification is not None:
-            result["updateNotification"] = self.update_notification
+            result["updateNotification"] = self.update_notification.to_json()
         if self.reminders is not None and len(self.reminders) > 0:
             result["reminders"] = [reminder.to_json() for reminder in self.reminders]
         if self.actions is not None and len(self.actions) > 0:
@@ -110,13 +110,26 @@ class TimelineNotification(db.Model):
     layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
 
     @classmethod
-    def from_json(cls, notification_json):
+    def from_json(cls, notification_json, optional_time=False):
         if notification_json is None:
             return notification_json
+        try:
+            time = valid_time(parse_time(notification_json['time']))
+        except KeyError as e:
+            if optional_time:
+                time = None
+            else:
+                raise e
         return cls(
-            time=parse_time(notification_json.get('time')),
+            time=time,
             layout=TimelineLayout.from_json(notification_json['layout'])
         )
+
+    def to_json(self):
+        result = {"layout": self.layout.to_json()}
+        if self.time:
+            result["time"] = time_to_str(self.time)
+        return result
 
 
 class TimelineLayout(db.Model):
@@ -137,7 +150,7 @@ class TimelineLayout(db.Model):
 class TimelineReminder(db.Model):
     __tablename__ = "timeline_reminders"
     id = db.Column(db.Integer, primary_key=True)
-    time = db.Column(db.DateTime)
+    time = db.Column(db.DateTime, nullable=False)
 
     layout_id = db.Column(db.Integer, db.ForeignKey('timeline_layouts.id'), nullable=False)
     layout = db.relationship('TimelineLayout', lazy=False, uselist=False, single_parent=True, cascade="all, delete-orphan")
@@ -150,7 +163,7 @@ class TimelineReminder(db.Model):
             return []
         return [
             cls(
-                time=parse_time(reminder_json['time']),
+                time=valid_time(parse_time(reminder_json['time'])),
                 layout=TimelineLayout.from_json(reminder_json['layout'])
             ) for reminder_json in reminders_json
         ]
@@ -183,13 +196,29 @@ class UserTimeline(db.Model):
 
     pin = db.relationship('TimelinePin', lazy=False, uselist=False)
     pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid'))
-    # TODO: topicKey, subDate
+    topic_key = db.Column(db.String)
+    sub_date = db.Column(db.DateTime)
 
     def to_json(self):
         if self.type == 'timeline.pin.create' or self.type == 'timeline.pin.delete':
             return {"type": self.type, "data": self.pin.to_json()}
+        elif self.type == 'timeline.topic.subscribe':
+            return {"type": self.type, "data": {"topicKey": self.topic_key, "subDate": time_to_str(self.sub_date)}}
+        elif self.type == 'timeline.topic.unsubscribe':
+            return {"type": self.type, "data": {"topicKey": self.topic_key}}
         else:
-            return None  # TODO: timeline.topic.subscribe, timeline.topic.unsubscribe
+            return None
+
+
+class UserSubscription(db.Model):
+    __tablename__ = "user_subscriptions"
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, index=True)
+    app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
+    topic = db.Column(db.String, nullable=False)
+
+
+db.Index('user_subscription_appuuid_topic_index', UserSubscription.app_uuid, UserSubscription.topic, unique=True)
 
 
 def init_app(app):

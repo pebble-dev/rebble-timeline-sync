@@ -1,11 +1,24 @@
 from flask import Blueprint, jsonify, url_for, request
+import datetime
 import secrets
 import uuid
-from .models import db, SandboxToken, TimelinePin, UserTimeline
+from .models import db, SandboxToken, TimelinePin, UserTimeline, UserSubscription
 from .utils import get_uid, api_error
 
 
 api = Blueprint('api', __name__)
+
+
+def parse_user_token(user_token):
+    if user_token is None:
+        raise ValueError
+    sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()
+    if sandbox_token is None:
+        # TODO try get ids from locker for user_token
+        raise ValueError
+    else:
+        # TODO: maybe dataSource isn't app_uuid???
+        return sandbox_token.user_id, sandbox_token.app_uuid, f"sandbox-uuid:{sandbox_token.app_uuid}"
 
 
 @api.route('/tokens/sandbox/<app_uuid>')
@@ -46,19 +59,11 @@ def sync():
 
 @api.route('/user/pins/<pin_id>', methods=['PUT', 'DELETE'])
 def user_pin(pin_id):
-    user_token = request.headers.get('X-User-Token')
-
-    if user_token is None:
+    try:
+        user_token = request.headers.get('X-User-Token')
+        user_id, app_uuid, data_source = parse_user_token(user_token)
+    except ValueError:
         return api_error(410)
-
-    sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()
-    if sandbox_token is None:
-        # TODO try get ids from locker for user_token
-        return api_error(410)
-    else:
-        app_uuid = sandbox_token.app_uuid
-        user_id = sandbox_token.user_id
-        data_source = f"sandbox-uuid:{app_uuid}"  # TODO: maybe it's not app_uuid. where does this uuid come from???
 
     if request.method == 'PUT':
         pin_json = request.json
@@ -66,8 +71,8 @@ def user_pin(pin_id):
             return api_error(400)
 
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).one_or_none()
-        if pin is None:
-            pin = TimelinePin.from_json(pin_json, app_uuid, user_id, data_source, 'web', '[]')
+        if pin is None:  # create pin
+            pin = TimelinePin.from_json(pin_json, app_uuid, user_id, data_source, 'web', [])
             if pin is None:
                 return api_error(400)
 
@@ -77,16 +82,16 @@ def user_pin(pin_id):
             db.session.add(pin)
             db.session.add(user_timeline)
             db.session.commit()
-        else:
+        else:  # update pin
             try:
                 pin.update_from_json(pin_json)
                 user_timeline = UserTimeline(user_id=user_id,
-                                             type='timeline.pin.create',  # actually it's update, but app wants create
+                                             type='timeline.pin.create',
                                              pin=pin)
                 db.session.add(pin)
                 db.session.add(user_timeline)
                 db.session.commit()
-            except KeyError:
+            except (KeyError, ValueError):
                 return api_error(400)
 
     elif request.method == 'DELETE':
@@ -97,6 +102,66 @@ def user_pin(pin_id):
         db.session.add(user_timeline)
         db.session.commit()
     return 'OK'
+
+
+@api.route('/shared/pins/<pin_id>', methods=['PUT', 'DELETE'])
+def shared_pin(pin_id):
+    api_key = request.headers.get('X-API-Key')
+    return api_error(403)  # TODO: check api_key in dev portal, add/delete shared pins
+
+
+@api.route('/user/subscriptions')
+def user_subscriptions_list():
+    try:
+        user_token = request.headers.get('X-User-Token')
+        user_id, app_uuid, _ = parse_user_token(user_token)
+    except ValueError:
+        return api_error(410)
+
+    return jsonify(
+        {
+            "topics": [sub.topic for sub in UserSubscription.query.filter_by(app_uuid=app_uuid, user_id=user_id)]
+        }
+    )
+
+
+@api.route('/user/subscriptions/<topic>', methods=['POST', 'DELETE'])
+def user_subscriptions_manage(topic):
+    try:
+        user_token = request.headers.get('X-User-Token')
+        user_id, app_uuid, _ = parse_user_token(user_token)
+    except ValueError:
+        return api_error(410)
+
+    if request.method == 'POST':
+        user_subscription = UserSubscription(user_id=user_id, app_uuid=app_uuid, topic=topic)
+        user_timeline = UserTimeline(user_id=user_id,
+                                     type='timeline.topic.subscribe',
+                                     topic_key=topic,
+                                     sub_date=datetime.datetime.utcnow())
+        db.session.add(user_timeline)
+        db.session.add(user_subscription)
+        db.session.commit()
+    elif request.method == 'DELETE':
+        user_subscription = UserSubscription.query.filter_by(user_id=user_id, app_uuid=app_uuid, topic=topic).first_or_404()
+        user_timeline = UserTimeline(user_id=user_id,
+                                     type='timeline.topic.unsubscribe',
+                                     topic_key=topic)
+        db.session.add(user_timeline)
+        db.session.delete(user_subscription)
+        db.session.commit()
+
+    return 'OK'
+
+
+@api.errorhandler(404)
+def page_not_found(e):
+    return api_error(404)
+
+
+@api.errorhandler(500)
+def internal_server_error(e):
+    return api_error(500)
 
 
 def init_api(app, url_prefix='/v1'):

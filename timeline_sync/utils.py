@@ -7,8 +7,10 @@ import datetime
 ERROR_CODES = {
     400:	{"errorCode": "INVALID_JSON"},
     403:	{"errorCode": "INVALID_API_KEY"},
+    404:	{"errorCode": "NOT_FOUND"},
     410:	{"errorCode": "INVALID_USER_TOKEN"},
     429:	{"errorCode": "RATE_LIMIT_EXCEEDED"},
+    500:    {"errorCode": "INTERNAL_SERVER_ERROR"}
 }
 
 ISO_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
@@ -55,3 +57,10 @@ def parse_time(time_str):
 
 def time_to_str(time):
     return time.strftime(ISO_FORMAT)
+
+
+def valid_time(time):
+    now = datetime.datetime.utcnow()
+    if (time < now and (now - time).days > 2) or (time > now and (time - now).days > 366):
+        raise ValueError('Time must not be more than two days in the past, or a year in the future.')
+    return time
