@@ -2,9 +2,10 @@ from flask import Blueprint, jsonify, url_for, request
 import datetime
 import secrets
 import uuid
+import requests
 from .models import db, SandboxToken, TimelinePin, UserTimeline, UserSubscription
 from .utils import get_uid, api_error
-
+from .settings import config
 
 api = Blueprint('api', __name__)
 
@@ -13,12 +14,15 @@ def parse_user_token(user_token):
     if user_token is None:
         raise ValueError
     sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()
-    if sandbox_token is None:
-        # TODO try get ids from locker for user_token
-        raise ValueError
-    else:
-        # TODO: maybe dataSource isn't app_uuid???
+    if sandbox_token is not None:
         return sandbox_token.user_id, sandbox_token.app_uuid, f"sandbox-uuid:{sandbox_token.app_uuid}"
+    else:
+        result = requests.get(f"{config['APPSTORE_API_URL']}/api/v1/locker/by_token/{user_token}")
+        if result.status_code != 200:
+            raise ValueError
+        locker_info = result.json()
+        return locker_info['user_id'], locker_info['app_uuid'], f"uuid:{locker_info['app_uuid']}"
+    # TODO: should dataSource be app_uuid or it's something else?
 
 
 @api.route('/tokens/sandbox/<app_uuid>')
@@ -26,7 +30,7 @@ def get_sandbox_token(app_uuid):
     uid = get_uid()
     app_uuid = uuid.UUID(app_uuid)
 
-    sandbox_token = SandboxToken.query.get((uid, app_uuid))
+    sandbox_token = SandboxToken.query.filter_by(user_id=uid, app_uuid=app_uuid).one_or_none()
 
     if sandbox_token is None:
         # TODO: return 404 if app does not have timeline support or user is not authorised in dev portal
@@ -34,7 +38,7 @@ def get_sandbox_token(app_uuid):
         db.session.add(sandbox_token)
         db.session.commit()
 
-    result = {"uuid": app_uuid, "token": sandbox_token.token}
+    result = {"uuid": sandbox_token.app_uuid, "token": sandbox_token.token}
 
     return jsonify(result)
 

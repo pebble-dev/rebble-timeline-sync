@@ -10,9 +10,12 @@ db = SQLAlchemy()
 
 class SandboxToken(db.Model):
     __tablename__ = "sandbox_tokens"
-    user_id = db.Column(db.Integer, primary_key=True)
-    app_uuid = db.Column(UUID(as_uuid=True), primary_key=True)
-    token = db.Column(db.String, index=True)
+    token = db.Column(db.String, primary_key=True)
+    user_id = db.Column(db.Integer)
+    app_uuid = db.Column(UUID(as_uuid=True))
+
+
+db.Index('sandbox_token_uid_appuuid_index', SandboxToken.user_id, SandboxToken.app_uuid, unique=True)
 
 
 class TimelinePin(db.Model):
