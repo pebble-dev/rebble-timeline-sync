@@ -1,16 +1,15 @@
 from flask import Blueprint, jsonify, url_for, request
-import datetime
 import secrets
 import uuid
 import requests
-from .models import db, SandboxToken, TimelinePin, UserTimeline, UserSubscription
+from .models import db, SandboxToken, TimelinePin, UserTimeline
 from .utils import get_uid, api_error
 from .settings import config
 
 api = Blueprint('api', __name__)
 
 
-def parse_user_token(user_token):
+def get_locker_info(user_token):
     if user_token is None:
         raise ValueError
     sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()
@@ -22,7 +21,6 @@ def parse_user_token(user_token):
             raise ValueError
         locker_info = result.json()
         return locker_info['user_id'], locker_info['app_uuid'], f"uuid:{locker_info['app_uuid']}"
-    # TODO: should dataSource be app_uuid or it's something else?
 
 
 @api.route('/tokens/sandbox/<app_uuid>')
@@ -65,7 +63,7 @@ def sync():
 def user_pin(pin_id):
     try:
         user_token = request.headers.get('X-User-Token')
-        user_id, app_uuid, data_source = parse_user_token(user_token)
+        user_id, app_uuid, data_source = get_locker_info(user_token)
     except ValueError:
         return api_error(410)
 
@@ -76,7 +74,7 @@ def user_pin(pin_id):
 
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).one_or_none()
         if pin is None:  # create pin
-            pin = TimelinePin.from_json(pin_json, app_uuid, user_id, data_source, 'web', [])
+            pin = TimelinePin.from_json(pin_json, app_uuid, user_id, data_source, 'web')
             if pin is None:
                 return api_error(400)
 
@@ -110,52 +108,17 @@ def user_pin(pin_id):
 
 @api.route('/shared/pins/<pin_id>', methods=['PUT', 'DELETE'])
 def shared_pin(pin_id):
-    api_key = request.headers.get('X-API-Key')
-    return api_error(403)  # TODO: check api_key in dev portal, add/delete shared pins
+    return api_error(403)  # Shared pins are not supported for now
 
 
 @api.route('/user/subscriptions')
 def user_subscriptions_list():
-    try:
-        user_token = request.headers.get('X-User-Token')
-        user_id, app_uuid, _ = parse_user_token(user_token)
-    except ValueError:
-        return api_error(410)
-
-    return jsonify(
-        {
-            "topics": [sub.topic for sub in UserSubscription.query.filter_by(app_uuid=app_uuid, user_id=user_id)]
-        }
-    )
+    return api_error(410)  # Shared pins are not supported for now
 
 
 @api.route('/user/subscriptions/<topic>', methods=['POST', 'DELETE'])
 def user_subscriptions_manage(topic):
-    try:
-        user_token = request.headers.get('X-User-Token')
-        user_id, app_uuid, _ = parse_user_token(user_token)
-    except ValueError:
-        return api_error(410)
-
-    if request.method == 'POST':
-        user_subscription = UserSubscription(user_id=user_id, app_uuid=app_uuid, topic=topic)
-        user_timeline = UserTimeline(user_id=user_id,
-                                     type='timeline.topic.subscribe',
-                                     topic_key=topic,
-                                     sub_date=datetime.datetime.utcnow())
-        db.session.add(user_timeline)
-        db.session.add(user_subscription)
-        db.session.commit()
-    elif request.method == 'DELETE':
-        user_subscription = UserSubscription.query.filter_by(user_id=user_id, app_uuid=app_uuid, topic=topic).first_or_404()
-        user_timeline = UserTimeline(user_id=user_id,
-                                     type='timeline.topic.unsubscribe',
-                                     topic_key=topic)
-        db.session.add(user_timeline)
-        db.session.delete(user_subscription)
-        db.session.commit()
-
-    return 'OK'
+    return api_error(410)  # Shared pins are not supported for now
 
 
 @api.errorhandler(404)

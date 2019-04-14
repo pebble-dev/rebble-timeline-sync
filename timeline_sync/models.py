@@ -45,10 +45,9 @@ class TimelinePin(db.Model):
     source = db.Column(db.String(8), nullable=False)
     create_time = db.Column(db.DateTime, nullable=False)
     update_time = db.Column(db.DateTime, nullable=False)
-    topic_keys = db.Column(ARRAY(db.String), nullable=False)
 
     @classmethod
-    def from_json(cls, pin_json, app_uuid, user_id, data_source, source, topic_keys):
+    def from_json(cls, pin_json, app_uuid, user_id, data_source, source):
         try:
             pin = cls(
                 guid=uuid.uuid4(),
@@ -58,7 +57,6 @@ class TimelinePin(db.Model):
                 data_source=data_source,
                 source=source,
                 create_time=datetime.datetime.utcnow(),
-                topic_keys=topic_keys
             )
             pin.update_from_json(pin_json)
             return pin
@@ -84,7 +82,7 @@ class TimelinePin(db.Model):
             "source": self.source,
             "createTime": time_to_str(self.create_time),
             "updateTime": time_to_str(self.update_time),
-            "topicKeys": self.topic_keys
+            "topicKeys": []
         }
 
         if self.duration is not None:
@@ -199,29 +197,12 @@ class UserTimeline(db.Model):
 
     pin = db.relationship('TimelinePin', lazy=False, uselist=False)
     pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid'))
-    topic_key = db.Column(db.String)
-    sub_date = db.Column(db.DateTime)
 
     def to_json(self):
         if self.type == 'timeline.pin.create' or self.type == 'timeline.pin.delete':
             return {"type": self.type, "data": self.pin.to_json()}
-        elif self.type == 'timeline.topic.subscribe':
-            return {"type": self.type, "data": {"topicKey": self.topic_key, "subDate": time_to_str(self.sub_date)}}
-        elif self.type == 'timeline.topic.unsubscribe':
-            return {"type": self.type, "data": {"topicKey": self.topic_key}}
         else:
             return None
-
-
-class UserSubscription(db.Model):
-    __tablename__ = "user_subscriptions"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, index=True)
-    app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
-    topic = db.Column(db.String, nullable=False)
-
-
-db.Index('user_subscription_appuuid_topic_index', UserSubscription.app_uuid, UserSubscription.topic, unique=True)
 
 
 def init_app(app):
