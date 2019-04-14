@@ -3,7 +3,7 @@ import secrets
 import uuid
 import requests
 from .models import db, SandboxToken, TimelinePin, UserTimeline
-from .utils import get_uid, api_error
+from .utils import get_uid, api_error, pin_valid
 from .settings import config
 
 api = Blueprint('api', __name__)
@@ -44,17 +44,21 @@ def get_sandbox_token(app_uuid):
 @api.route('/sync')
 def sync():
     user_id = get_uid()
+    last_timeline_id = request.args.get('timeline')
 
     user_timeline = db.session.query(UserTimeline).filter_by(user_id=user_id)
+    if last_timeline_id is not None:
+        user_timeline = user_timeline.filter(UserTimeline.id > last_timeline_id)
+
+    last_timeline = user_timeline.order_by(UserTimeline.id.desc()).first()
+    if last_timeline is not None:
+        last_timeline_id = last_timeline.id
 
     updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline]
 
-    user_timeline.delete()
-    db.session.commit()
-
     result = {
         "updates": updates,
-        "syncURL": url_for('api.sync', _external=True)
+        "syncURL": url_for('api.sync', timeline=last_timeline_id, _external=True)
     }
     return jsonify(result)
 
@@ -69,7 +73,7 @@ def user_pin(pin_id):
 
     if request.method == 'PUT':
         pin_json = request.json
-        if pin_json is None or pin_json.get('id') != pin_id:
+        if not pin_valid(pin_id, pin_json):
             return api_error(400)
 
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).one_or_none()

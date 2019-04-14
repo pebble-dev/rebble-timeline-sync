@@ -59,8 +59,30 @@ def time_to_str(time):
     return time.strftime(ISO_FORMAT)
 
 
-def valid_time(time):
+def time_valid(time):
     now = datetime.datetime.utcnow()
     if (time < now and (now - time).days > 2) or (time > now and (time - now).days > 366):
-        raise ValueError('Time must not be more than two days in the past, or a year in the future.')
-    return time
+        return False  # Time must not be more than two days in the past, or a year in the future.
+    return True
+
+
+def pin_valid(pin_id, pin_json):
+    try:
+        if pin_json is None or pin_json.get('id') != pin_id:
+            return False
+        if not time_valid(parse_time(pin_json['time'])):
+            return False
+        if 'createNotification' in pin_json and 'time' in pin_json['createNotification']:
+            return False  # The createNotification type does not require a time attribute.
+        if 'updateNotification' in pin_json and not time_valid(parse_time(pin_json['updateNotification']['time'])):
+            return False
+        if 'reminders' in pin_json:
+            if len(pin_json['reminders']) > 3:
+                return False  # Max 3 reminders
+            for reminder in pin_json['reminders']:
+                if not time_valid(parse_time(reminder['time'])):
+                    return False
+    except (KeyError, ValueError):
+        return False
+    return True
+
