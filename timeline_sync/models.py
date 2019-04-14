@@ -1,3 +1,4 @@
+from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .utils import parse_time, time_to_str
@@ -110,7 +111,20 @@ class UserTimeline(db.Model):
             return None
 
 
+def delete_expired_pins(app):
+    with app.app_context():
+        expiration_time = datetime.datetime.utcnow() - datetime.timedelta(days=2)  # Remove pins older than 2 days
+        expired_pins = db.session.query(TimelinePin).filter(TimelinePin.time < expiration_time)
+
+        expired_pins.delete()
+        db.session.commit()
+
+
 def init_app(app):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     db.init_app(app)
     db.create_all(app=app)
+
+    scheduler = BackgroundScheduler(daemon=True)
+    scheduler.add_job(delete_expired_pins, 'cron', [app], hour=4, minute=0)  # Runs every day at 4 AM
+    scheduler.start()
