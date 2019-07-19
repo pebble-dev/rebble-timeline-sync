@@ -1,4 +1,3 @@
-from apscheduler.schedulers.background import BackgroundScheduler
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from sqlalchemy.dialects.postgresql import UUID, JSONB
@@ -127,6 +126,3 @@ def init_app(app):
     db.init_app(app)
     migrate.init_app(app, db)
 
-    scheduler = BackgroundScheduler(daemon=True)
-    scheduler.add_job(delete_expired_pins, 'cron', [app], hour=4, minute=0)  # Runs every day at 4 AM
-    scheduler.start()
