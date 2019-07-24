@@ -16,7 +16,7 @@ def get_locker_info(user_token):
     if sandbox_token is not None:
         return sandbox_token.user_id, sandbox_token.app_uuid, f"sandbox-uuid:{sandbox_token.app_uuid}"
     else:
-        result = requests.get(f"{config['APPSTORE_API_URL']}/api/v1/locker/by_token/{user_token}", headers={"Authorization", f"Bearer {config['SECRET_KEY']}"})
+        result = requests.get(f"{config['APPSTORE_API_URL']}/api/v1/locker/by_token/{user_token}", headers={"Authorization": f"Bearer {config['SECRET_KEY']}"})
         if result.status_code != 200:
             raise ValueError
         locker_info = result.json()
