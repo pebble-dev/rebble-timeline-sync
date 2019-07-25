@@ -54,7 +54,7 @@ def sync():
     if last_timeline is not None:
         last_timeline_id = last_timeline.id
 
-    updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline]
+    updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline.order_by(UserTimeline.id.asc())]
 
     result = {
         "updates": updates,
