@@ -14,6 +14,7 @@ ERROR_CODES = {
 }
 
 ISO_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
+ISO_FORMAT_MSEC = '%Y-%m-%dT%H:%M:%S.%fZ'
 
 # Copied from https://github.com/pebble-dev/rebble-appstore-api/blob/master/appstore/utils.py
 # Really should be in common library
@@ -52,7 +53,12 @@ def api_error(code):
 
 
 def parse_time(time_str):
-    return datetime.datetime.strptime(time_str, ISO_FORMAT)
+    try:
+        return datetime.datetime.strptime(time_str, ISO_FORMAT)
+    except ValueError:
+        pass
+    
+    return datetime.datetime.strptime(time_str, ISO_FORMAT_MSEC)
 
 
 def time_to_str(time):
