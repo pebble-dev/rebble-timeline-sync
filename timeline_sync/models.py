@@ -25,7 +25,7 @@ class TimelinePin(db.Model):
     guid = db.Column(UUID(as_uuid=True), primary_key=True)
     app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
     user_id = db.Column(db.Integer, nullable=False)
-    id = db.Column(db.String(32), nullable=False)
+    id = db.Column(db.String(64), nullable=False)
     time = db.Column(db.DateTime, nullable=False)
     duration = db.Column(db.Integer)
 
