@@ -88,7 +88,7 @@ def pin_valid(pin_id, pin_json):
             for reminder in pin_json['reminders']:
                 if not time_valid(parse_time(reminder['time'])):
                     return False
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, TypeError):
         return False
     return True
 
