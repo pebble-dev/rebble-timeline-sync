@@ -112,7 +112,7 @@ class UserTimeline(db.Model):
         else:
             return None
 
-db.Index('user_timeline_user_id', UserTimeline.user_id)
+db.Index('user_timeline_pinid', UserTimeline.pin_id, unique = True)
 
 def delete_expired_pins(app):
     with app.app_context():
