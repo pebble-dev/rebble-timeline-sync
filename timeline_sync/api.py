@@ -91,6 +91,12 @@ def user_pin(pin_id):
         else:  # update pin
             try:
                 pin.update_from_json(pin_json)
+
+                # Clean up old UserTimeline events first.  Note that this
+                # has to be transactional with creating the new one --
+                # which, luckily, it is!
+                UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+
                 user_timeline = UserTimeline(user_id=user_id,
                                              type='timeline.pin.create',
                                              pin=pin)
@@ -102,6 +108,11 @@ def user_pin(pin_id):
 
     elif request.method == 'DELETE':
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).first_or_404()
+
+        # No need to post even old create events, since nobody will render
+        # them, after all.
+        UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+
         user_timeline = UserTimeline(user_id=user_id,
                                      type='timeline.pin.delete',
                                      pin=pin)
