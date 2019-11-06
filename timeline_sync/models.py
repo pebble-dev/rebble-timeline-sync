@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from .utils import parse_time, time_to_str
 import uuid
@@ -121,6 +122,27 @@ def delete_expired_pins(app):
         expired_pins.delete()
         db.session.commit()
 
+# Meant to be run once in command line to clean up after b77d214fe44c5c6a82e25e012bb9c917c2649fea.
+def cleanup_duplicate_usertimeline():
+    all_pins = UserTimeline.query.with_entities(UserTimeline.pin_id, func.count(UserTimeline.pin_id).label('total')).group_by(UserTimeline.pin_id).all()
+
+    for pin, count in all_pins:
+        if count <= 1:
+            continue
+
+        print(f"Cleaning up pin {pin} with {count} UserTimelines")
+
+        # Look up the pin's max.
+        baseq = UserTimeline.query.filter(UserTimeline.pin_id == pin)
+
+        max_id = baseq.order_by(UserTimeline.id.desc()).first()
+
+        remainder = baseq.filter(UserTimeline.id < max_id.id)
+
+        assert(remainder.count() == count - 1)
+
+        remainder.delete()
+        db.session.commit()
 
 def init_app(app):
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
