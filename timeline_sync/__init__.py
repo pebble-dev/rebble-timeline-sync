@@ -6,12 +6,16 @@ from .models import init_app, delete_expired_pins
 
 import beeline
 from beeline.patch import requests
+from beeline.middleware.flask import HoneyMiddleware
+
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
 app.config.update(**config)
 if config['HONEYCOMB_KEY']:
      beeline.init(writekey=config['HONEYCOMB_KEY'], dataset='rws', service_name='timeline_sync')
      HoneyMiddleware(app, db_events = True)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
 
