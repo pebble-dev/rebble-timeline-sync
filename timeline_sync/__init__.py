@@ -19,6 +19,15 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
 
+# XXX: upstream this
+import beeline
+
+@app.before_request
+def before_request():
+    beeline.add_context_field("route", request.endpoint)
+    if request.args.get('access_token'):
+        beeline.add_context_field("user", request.args.get('access_token'))
+
 @app.route('/heartbeat')
 def heartbeat():
     return 'ok'
