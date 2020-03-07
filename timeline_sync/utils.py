@@ -3,6 +3,7 @@ from flask import request, abort, jsonify
 from .settings import config
 import datetime
 
+import beeline
 
 ERROR_CODES = {
     400:	{"errorCode": "INVALID_JSON"},
@@ -30,6 +31,7 @@ def get_access_token():
                 access_token = auth[1]
     if not access_token:
         abort(401)
+    beeline.add_context_field("access_token", access_token)
     return access_token
 
 
@@ -43,12 +45,14 @@ def get_uid():
     result = authed_request('GET', f"{config['REBBLE_AUTH_URL']}/api/v1/me")
     if result.status_code != 200:
         abort(401)
+    beeline.add_context_field("user", result.json()['uid'])
     return result.json()['uid']
 
 
 def api_error(code):
     response = jsonify(ERROR_CODES[code])
     response.status_code = code
+    beeline.add_context_field('timeline.failure', response['errorCode'])
     return response
 
 

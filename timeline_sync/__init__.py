@@ -25,8 +25,6 @@ import beeline
 @app.before_request
 def before_request():
     beeline.add_context_field("route", request.endpoint)
-    if request.args.get('access_token'):
-        beeline.add_context_field("user", request.args.get('access_token'))
 
 @app.route('/heartbeat')
 def heartbeat():

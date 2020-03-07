@@ -6,6 +6,8 @@ from .models import db, SandboxToken, TimelinePin, UserTimeline
 from .utils import get_uid, api_error, pin_valid
 from .settings import config
 
+import beeline
+
 api = Blueprint('api', __name__)
 
 
@@ -14,12 +16,16 @@ def get_locker_info(user_token):
         raise ValueError
     sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()
     if sandbox_token is not None:
+        beeline.add_context_field('user', sandbox_token.user_id)
+        beeline.add_context_field('app_uuid', sandbox_token.app_uuid)
         return sandbox_token.user_id, sandbox_token.app_uuid, f"sandbox-uuid:{sandbox_token.app_uuid}"
     else:
         result = requests.get(f"{config['APPSTORE_API_URL']}/api/v1/locker/by_token/{user_token}", headers={"Authorization": f"Bearer {config['SECRET_KEY']}"})
         if result.status_code != 200:
             raise ValueError
         locker_info = result.json()
+        beeline.add_context_field('user', locker_info['user_id'])
+        beeline.add_context_field('app_uuid', locker_info['app_uuid'])
         return locker_info['user_id'], locker_info['app_uuid'], f"uuid:{locker_info['app_uuid']}"
 
 
