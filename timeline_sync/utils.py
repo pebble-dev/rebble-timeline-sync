@@ -52,7 +52,7 @@ def get_uid():
 def api_error(code):
     response = jsonify(ERROR_CODES[code])
     response.status_code = code
-    beeline.add_context_field('timeline.failure', response['errorCode'])
+    beeline.add_context_field('timeline.failure', ERROR_CODES[code]['errorCode'])
     return response
 
 
