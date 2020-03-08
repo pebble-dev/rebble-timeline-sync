@@ -80,12 +80,14 @@ def user_pin(pin_id):
     if request.method == 'PUT':
         pin_json = request.json
         if not pin_valid(pin_id, pin_json):
+            beeline.add_context_field('timeline.failure.cause', 'pin_valid')
             return api_error(400)
 
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=user_id, id=pin_id).one_or_none()
         if pin is None:  # create pin
             pin = TimelinePin.from_json(pin_json, app_uuid, user_id, data_source, 'web')
             if pin is None:
+                beeline.add_context_field('timeline.failure.cause', 'from_json')
                 return api_error(400)
 
             user_timeline = UserTimeline(user_id=user_id,
@@ -110,6 +112,7 @@ def user_pin(pin_id):
                 db.session.add(user_timeline)
                 db.session.commit()
             except (KeyError, ValueError):
+                beeline.add_context_field('timeline.failure.cause', 'update_pin')
                 return api_error(400)
 
     elif request.method == 'DELETE':

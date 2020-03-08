@@ -79,20 +79,27 @@ def time_valid(time):
 def pin_valid(pin_id, pin_json):
     try:
         if pin_json is None or pin_json.get('id') != pin_id:
+            beeline.add_context_field('timeline.failure.details', 'parse_failure_or_id_mismatch')
             return False
         if not time_valid(parse_time(pin_json['time'])):
+            beeline.add_context_field('timeline.failure.details', 'invalid_time')
             return False
         if 'createNotification' in pin_json and 'time' in pin_json['createNotification']:
+            beeline.add_context_field('timeline.failure.details', 'invalid_time_attribute')
             return False  # The createNotification type does not require a time attribute.
         if 'updateNotification' in pin_json and not time_valid(parse_time(pin_json['updateNotification']['time'])):
+            beeline.add_context_field('timeline.failure.details', 'invalid_time_for_update')
             return False
         if 'reminders' in pin_json:
             if len(pin_json['reminders']) > 3:
+                beeline.add_context_field('timeline.failure.details', 'too_many_reminders')
                 return False  # Max 3 reminders
             for reminder in pin_json['reminders']:
                 if not time_valid(parse_time(reminder['time'])):
+                    beeline.add_context_field('timeline.failure.details', 'invalid_reminder_time')
                     return False
     except (KeyError, ValueError, TypeError):
+        beeline.add_context_field('timeline.failure.details', 'miscellaneous_failure')
         return False
     return True
 
