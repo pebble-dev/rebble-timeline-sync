@@ -1,0 +1,25 @@
+name: autobuild
+
+on:
+  push:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Checkout submodules
+      shell: bash
+      run: |
+        auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+        git submodule sync --recursive
+        git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+
+    - name: Log in to GCR
+      run: echo ${{ secrets.GCLOUD_SERVICE_KEY }} | base64 -d | docker login -u _json_key --password-stdin https://gcr.io/
+    - name: Build Docker
+      run: docker build -t gcr.io/pebble-rebirth/timeline-sync:g${GITHUB_SHA::7} -f Dockerfile.cloudrun .
+    - name: Push
+      run: docker push gcr.io/pebble-rebirth/timeline-sync:g${GITHUB_SHA::7}
