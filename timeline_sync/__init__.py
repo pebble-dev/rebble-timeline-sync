@@ -15,6 +15,7 @@ init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
 
 @app.route('/heartbeat')
+@app.route('/timeline-sync/heartbeat')
 def heartbeat():
     return 'ok'
 
