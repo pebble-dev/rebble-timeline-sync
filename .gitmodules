@@ -1,0 +1,3 @@
+[submodule "rws-common"]
+	path = rws-common
+	url = ../rws-common
