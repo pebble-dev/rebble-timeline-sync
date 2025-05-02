@@ -25,7 +25,8 @@ class TimelinePin(db.Model):
     __tablename__ = 'timeline_pins'
     guid = db.Column(UUID(as_uuid=True), primary_key=True)
     app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
-    user_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, nullable=True)
+
     id = db.Column(db.String(64), nullable=False)
     time = db.Column(db.DateTime, nullable=False)
     duration = db.Column(db.Integer)
@@ -42,8 +43,10 @@ class TimelinePin(db.Model):
     create_time = db.Column(db.DateTime, nullable=False)
     update_time = db.Column(db.DateTime, nullable=False)
 
+    topics = db.relationship('TimelineTopic', secondary='timeline_pin_topic', backref='TimelinePin')
+
     @classmethod
-    def from_json(cls, pin_json, app_uuid, user_id, data_source, source):
+    def from_json(cls, pin_json, app_uuid, user_id, data_source, source, topics):
         try:
             pin = cls(
                 guid=uuid.uuid4(),
@@ -53,6 +56,7 @@ class TimelinePin(db.Model):
                 data_source=data_source,
                 source=source,
                 create_time=datetime.datetime.utcnow(),
+                topics=topics,
             )
             pin.update_from_json(pin_json)
             return pin
@@ -78,7 +82,7 @@ class TimelinePin(db.Model):
             'source': self.source,
             'createTime': time_to_str(self.create_time),
             'updateTime': time_to_str(self.update_time),
-            'topicKeys': []
+            'topicKeys': list(map(lambda t: t.name, self.topics))
         }
 
         if self.duration is not None:
@@ -112,7 +116,39 @@ class UserTimeline(db.Model):
         else:
             return None
 
-db.Index('user_timeline_pinid', UserTimeline.pin_id, unique = True)
+db.Index('user_timeline_userid_pinid', UserTimeline.user_id, UserTimeline.pin_id, unique = True)
+
+class TimelineTopic(db.Model):
+    __tablename__ = 'timeline_topics'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(64), nullable=False)
+    app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
+
+    subscriptions = db.relationship('TimelineTopicSubscription', backref='TimelineTopic')
+
+    pins = db.relationship('TimelinePin', secondary='timeline_pin_topic', backref='TimelineTopic')
+
+db.Index('timeline_topic_appuuid_name_index', TimelineTopic.app_uuid, TimelineTopic.name, unique=True)
+
+class TimelinePinTopic(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    pin = db.relationship('TimelinePin', lazy=False, uselist=False, backref=db.backref('timeline_pin_topic', passive_deletes=True))
+    pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid', ondelete='CASCADE'))
+
+    topic = db.relationship('TimelineTopic', lazy=False, uselist=False, backref=db.backref('timeline_pin_topic', passive_deletes=True))
+    topic_id = db.Column(db.Integer, db.ForeignKey('timeline_topics.id', ondelete='CASCADE'))
+
+db.Index('timeline_pin_topic_pinid_topicid_index', TimelinePinTopic.pin_id, TimelinePinTopic.topic_id, unique=True)
+
+class TimelineTopicSubscription(db.Model):
+    __tablename__ = 'timeline_topic_subscriptions'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, index=True)
+    topic = db.relationship('TimelineTopic', backref=db.backref('timeline_topic_subscriptions', passive_deletes=True))
+    topic_id = db.Column(db.Integer, db.ForeignKey('timeline_topics.id', ondelete='CASCADE'))
+
+db.Index('timeline_topic_subscription_userid_topicid_index', TimelineTopicSubscription.user_id, TimelineTopicSubscription.topic_id, unique=True)
 
 def delete_expired_pins(app):
     with app.app_context():
