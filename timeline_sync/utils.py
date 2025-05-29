@@ -103,3 +103,22 @@ def pin_valid(pin_id, pin_json):
         return False
     return True
 
+
+def glance_valid(glance_json):
+    try:
+        if glance_json is None:
+            beeline.add_context_field('glance.failure.details', 'parse_failure')
+            return False
+        if 'slices' in glance_json:
+            for glance_slice in glance_json['slices']:
+                if 'expirationTime' in glance_slice and not parse_time(glance_slice['expirationTime']):
+                    beeline.add_context_field('glance.failure.details', 'invalid_expiration_time')
+                    return False
+        else:
+            beeline.add_context_field('glance.failure.details', 'no_slices')
+            return False
+    except (KeyError, ValueError, TypeError):
+        beeline.add_context_field('glance.failure.details', 'miscellaneous_failure')
+        return False
+    return True
+
