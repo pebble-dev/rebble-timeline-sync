@@ -150,12 +150,75 @@ class TimelineTopicSubscription(db.Model):
 
 db.Index('timeline_topic_subscription_userid_topicid_index', TimelineTopicSubscription.user_id, TimelineTopicSubscription.topic_id, unique=True)
 
+
+class AppGlance(db.Model):
+    __tablename__ = 'app_glances'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, index=True)
+    data_source = db.Column(db.String(64), nullable=False)
+    app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
+    create_time = db.Column(db.DateTime, nullable=False)
+    slices = db.relationship('AppGlanceSlice', backref='app_glance')
+
+    @classmethod
+    def from_json(cls, slices, app_uuid, user_id, data_source):
+        try:
+            glance = cls(
+                app_uuid=app_uuid,
+                user_id=user_id,
+                data_source=data_source,
+                create_time=datetime.datetime.utcnow(),
+                slices=[AppGlanceSlice.from_json(glance_slice) for glance_slice in slices],
+            )
+            return glance
+        except (KeyError, ValueError):
+            return None
+
+    def to_json(self):
+        return {'type': 'appglance.slice.create',
+                'data': {'createTime': time_to_str(self.create_time),
+                         'dataSource': self.data_source,
+                         'slices': [glance_slice.to_json() for glance_slice in self.slices]}}
+
+db.Index('app_glance_userid_appuuid', AppGlance.user_id, AppGlance.app_uuid, unique = True)
+
+
+class AppGlanceSlice(db.Model):
+    __tablename__ = 'app_glance_slices'
+    id = db.Column(db.Integer, primary_key=True)
+    app_glance_id = db.Column(db.Integer, db.ForeignKey('app_glances.id', ondelete='CASCADE'))
+    layout = db.Column(JSONB, nullable=False)
+    expiration = db.Column(db.DateTime, nullable=True)
+
+    @classmethod
+    def from_json(cls, glance_slice_json):
+        try:
+            glance_slice = cls(
+                layout=glance_slice_json['layout'],
+                expiration=parse_time(glance_slice_json['expirationTime']) if 'expirationTime' in glance_slice_json else None,
+            )
+            return glance_slice
+        except (KeyError, ValueError):
+            return None
+
+    def to_json(self):
+        result = {
+            'layout': self.layout
+        }
+
+        if self.expiration is not None:
+            result['expirationTime'] = time_to_str(self.expiration)
+
+        return result
+
 def delete_expired_pins(app):
     with app.app_context():
         expiration_time = datetime.datetime.utcnow() - datetime.timedelta(days=2)  # Remove pins older than 2 days
         expired_pins = db.session.query(TimelinePin).filter(TimelinePin.time < expiration_time)
+        expired_glances = db.session.query(AppGlanceSlice).filter(AppGlanceSlice.expiration < datetime.datetime.utcnow())
 
         expired_pins.delete()
+        expired_glances.delete()
         db.session.commit()
 
 # Meant to be run once in command line to clean up after b77d214fe44c5c6a82e25e012bb9c917c2649fea.

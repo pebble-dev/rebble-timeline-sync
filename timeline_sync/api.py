@@ -2,8 +2,8 @@ from flask import Blueprint, jsonify, url_for, request
 import secrets
 import uuid
 import requests
-from .models import db, SandboxToken, TimelinePin, UserTimeline, TimelineTopic, TimelineTopicSubscription
-from .utils import get_uid, api_error, pin_valid
+from .models import db, SandboxToken, TimelinePin, UserTimeline, TimelineTopic, TimelineTopicSubscription, AppGlance
+from .utils import get_uid, api_error, pin_valid, glance_valid
 from .settings import config
 
 import beeline
@@ -60,11 +60,22 @@ def sync():
     if last_timeline is not None:
         last_timeline_id = last_timeline.id
 
-    updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline.order_by(UserTimeline.id.asc())]
+    last_glance_id = request.args.get('glance')
+
+    app_glances = db.session.query(AppGlance).filter_by(user_id=user_id)
+    if last_glance_id is not None:
+        app_glances = app_glances.filter(AppGlance.id > last_glance_id)
+
+    last_glance = app_glances.order_by(AppGlance.id.desc()).first()
+    if last_glance is not None:
+        last_glance_id = last_glance.id
+
+    timeline_updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline.order_by(UserTimeline.id.asc())]
+    glances_updates = [glance.to_json() for glance in app_glances.order_by(AppGlance.id.asc())]
 
     result = {
-        "updates": updates,
-        "syncURL": url_for('api.sync', timeline=last_timeline_id, _external=True)
+        "updates": timeline_updates + glances_updates,
+        "syncURL": url_for('api.sync', timeline=last_timeline_id, glance=last_glance_id, _external=True)
     }
     return jsonify(result)
 
@@ -270,6 +281,31 @@ def user_subscriptions_manage(topic_string):
 
         db.session.commit()
 
+    return 'OK'
+
+
+@api.route('/user/glance', methods=['PUT'])
+def user_app_glance():
+    try:
+        user_token = request.headers.get('X-User-Token')
+        user_id, app_uuid, data_source = get_locker_info(user_token)
+    except ValueError:
+        return api_error(410)
+
+    glance_json = request.json
+    if not glance_valid(glance_json):
+        beeline.add_context_field('glance.failure.cause', 'glance_valid')
+        return api_error(400)
+
+    AppGlance.query.filter_by(app_uuid=app_uuid, user_id=user_id).delete()
+
+    glance = AppGlance.from_json(glance_json['slices'], app_uuid, user_id, data_source)
+    if glance is None:
+        beeline.add_context_field('glance.failure.cause', 'from_json')
+        return api_error(400)
+
+    db.session.add(glance)
+    db.session.commit()
     return 'OK'
 
 
