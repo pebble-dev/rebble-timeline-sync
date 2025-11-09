@@ -237,7 +237,9 @@ def user_subscriptions_list():
         return api_error(410)
 
     topics = TimelineTopic.query.join(TimelineTopicSubscription, TimelineTopic.id == TimelineTopicSubscription.topic_id).filter(TimelineTopic.app_uuid == app_uuid, TimelineTopicSubscription.user_id == user_id)
-    result = list(map(lambda t: t.name, topics))
+    result = {
+        "topics": list(map(lambda t: t.name, topics))
+    }
 
     return jsonify(result)
 
