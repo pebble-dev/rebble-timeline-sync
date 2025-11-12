@@ -20,6 +20,28 @@ class SandboxToken(db.Model):
 
 db.Index('sandbox_token_uid_appuuid_index', SandboxToken.user_id, SandboxToken.app_uuid, unique=True)
 
+class FcmToken(db.Model):
+    __tablename__ = 'fcm_tokens'
+    token = db.Column(db.String, primary_key=True)
+    user_id = db.Column(db.Integer)
+    device_id = db.Column(db.String)
+    platform = db.Column(db.String)
+
+    @classmethod
+    def from_json(cls, fcm_token_json, token, user_id):
+        try:
+            fcm_token = cls(
+                token=token,
+                device_id=fcm_token_json['device_id'],
+                platform=fcm_token_json['platform'],
+                user_id=user_id,
+            )
+            return fcm_token
+        except (KeyError, ValueError):
+            return None
+
+
+db.Index('fcm_token_uid_token_index', FcmToken.user_id, FcmToken.token, unique=True)
 
 class TimelinePin(db.Model):
     __tablename__ = 'timeline_pins'

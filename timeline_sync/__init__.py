@@ -1,6 +1,7 @@
 from flask import Flask, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from rws_common import honeycomb
+import firebase_admin
 
 from .settings import config
 from .api import init_api
@@ -15,6 +16,8 @@ honeycomb.sample_routes['api.sync'] = 10
 
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
+
+default_app = firebase_admin.initialize_app()
 
 @app.route('/heartbeat')
 @app.route('/timeline-sync/heartbeat')
