@@ -42,7 +42,6 @@ def authed_request(method, url, **kwargs):
 
 
 def get_uid():
-    return 724621
     result = authed_request('GET', f"{config['REBBLE_AUTH_URL']}/api/v1/me")
     if result.status_code != 200:
         abort(401)
@@ -122,6 +121,4 @@ def glance_valid(glance_json):
         beeline.add_context_field('glance.failure.details', 'miscellaneous_failure')
         return False
     return True
-
-
 

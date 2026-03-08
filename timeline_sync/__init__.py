@@ -18,7 +18,7 @@ honeycomb.sample_routes['api.sync'] = 10
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
 
-cred = credentials.Certificate('/Users/jibraniqbal/AndroidStudioProjects/pebble-next/rebble-timeline-sync/pebble-app-test-firebase-adminsdk-fbsvc-6e1f9df72a.json')
+cred = credentials.Certificate('./google-services.json')
 default_app = firebase_admin.initialize_app(cred)
 
 @app.route('/heartbeat')

@@ -1,4 +1,3 @@
-from math import e
 from flask import Blueprint, jsonify, url_for, request
 import secrets
 import uuid
@@ -14,7 +13,6 @@ api = Blueprint('api', __name__)
 
 
 def get_locker_info(user_token):
-    return 724621, "95364c72-559e-482c-bb13-e655136cba28", "data_source"
     if user_token is None:
         raise ValueError
     sandbox_token = SandboxToken.query.filter_by(token=user_token).one_or_none()

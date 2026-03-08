@@ -3,7 +3,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from timeline_sync import app, nightly_maintenance
 
-app.run(environ.get("HOST", "192.168.0.226"), environ.get("PORT", 5000), debug=True)
+app.run(environ.get("HOST", "127.0.0.1"), environ.get("PORT", 5000), debug=True)
 
 # Use BackgroundScheduler in Docker mode; on prod, we call in directly from Zappa.
 scheduler = BackgroundScheduler(daemon=True)
