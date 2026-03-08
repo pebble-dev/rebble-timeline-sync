@@ -1,6 +1,8 @@
 from flask import Flask, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from rws_common import honeycomb
+import firebase_admin
+from firebase_admin import credentials
 
 from .settings import config
 from .api import init_api
@@ -15,6 +17,9 @@ honeycomb.sample_routes['api.sync'] = 10
 
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
+
+cred = credentials.Certificate('/Users/jibraniqbal/AndroidStudioProjects/pebble-next/rebble-timeline-sync/pebble-app-test-firebase-adminsdk-fbsvc-6e1f9df72a.json')
+default_app = firebase_admin.initialize_app(cred)
 
 @app.route('/heartbeat')
 @app.route('/timeline-sync/heartbeat')
