@@ -131,24 +131,38 @@ class UserTimeline(db.Model):
 
     pin = db.relationship('TimelinePin', lazy=False, uselist=False, backref=db.backref('timelines', passive_deletes=True))
     pin_id = db.Column(UUID(as_uuid=True), db.ForeignKey('timeline_pins.guid', ondelete='CASCADE'))
+    app_glance = db.relationship('TimelinePin', lazy=False, uselist=False, backref=db.backref('timelines', passive_deletes=True))
+    app_glance_id = db.Column(db.Integer, db.ForeignKey('app_glances.id', ondelete='CASCADE'))
+    topic = db.relationship('TimelineTopic', lazy=False, uselist=False, backref=db.backref('timelines', passive_deletes=True))
+    topic_id = db.Column(db.Integer, db.ForeignKey('timeline_topic.id', ondelete='CASCADE'))
 
     def to_json(self):
         if self.type == 'timeline.pin.create' or self.type == 'timeline.pin.delete':
             return {'type': self.type, 'data': self.pin.to_json()}
+        elif self.type == 'timeline.topic.subscription' or self.type == 'timeline.topic.unsubscription':
+            return {'type': self.type, 'data': self.topic.to_json()}
+        elif self.type == 'appglance.slice.create':
+            return {'type': self.type, 'data': self.app_glance.to_json()}
         else:
             return None
 
-db.Index('user_timeline_userid_pinid', UserTimeline.user_id, UserTimeline.pin_id, unique = True)
+db.Index('user_timeline_userid_pinid_appglanceid_topicid', UserTimeline.user_id, UserTimeline.pin_id, UserTimeline.app_glance_id, UserTimeline.topic_id, unique = True)
 
 class TimelineTopic(db.Model):
     __tablename__ = 'timeline_topics'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(64), nullable=False)
     app_uuid = db.Column(UUID(as_uuid=True), nullable=False)
+    create_time = db.Column(db.DateTime, nullable=False)
 
     subscriptions = db.relationship('TimelineTopicSubscription', backref='TimelineTopic')
 
     pins = db.relationship('TimelinePin', secondary='timeline_pin_topic', backref='TimelineTopic')
+
+    def to_json(self):
+        return {'createTime': time_to_str(self.create_time),
+                'dataSource': f"uuid:{self.app_uuid}"
+                'topic': self.name}
 
 db.Index('timeline_topic_appuuid_name_index', TimelineTopic.app_uuid, TimelineTopic.name, unique=True)
 
@@ -197,10 +211,9 @@ class AppGlance(db.Model):
             return None
 
     def to_json(self):
-        return {'type': 'appglance.slice.create',
-                'data': {'createTime': time_to_str(self.create_time),
-                         'dataSource': self.data_source,
-                         'slices': [glance_slice.to_json() for glance_slice in self.slices]}}
+        return {'createTime': time_to_str(self.create_time),
+                'dataSource': self.data_source,
+                'slices': [glance_slice.to_json() for glance_slice in self.slices]}
 
 db.Index('app_glance_userid_appuuid', AppGlance.user_id, AppGlance.app_uuid, unique = True)
 

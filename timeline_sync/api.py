@@ -60,22 +60,11 @@ def sync():
     if last_timeline is not None:
         last_timeline_id = last_timeline.id
 
-    last_glance_id = request.args.get('glance')
-
-    app_glances = db.session.query(AppGlance).filter_by(user_id=user_id)
-    if last_glance_id is not None:
-        app_glances = app_glances.filter(AppGlance.id > last_glance_id)
-
-    last_glance = app_glances.order_by(AppGlance.id.desc()).first()
-    if last_glance is not None:
-        last_glance_id = last_glance.id
-
     timeline_updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline.order_by(UserTimeline.id.asc())]
-    glances_updates = [glance.to_json() for glance in app_glances.order_by(AppGlance.id.asc())]
 
     result = {
-        "updates": timeline_updates + glances_updates,
-        "syncURL": url_for('api.sync', timeline=last_timeline_id, glance=last_glance_id, _external=True)
+        "updates": timeline_updates,
+        "syncURL": url_for('api.sync', timeline=last_timeline_id, _external=True)
     }
     return jsonify(result)
 
@@ -94,16 +83,16 @@ def fcm_token():
 
             db.session.add(fcm_token)
             db.session.commit()
-            # TODO: Also subscribe to user's topics
-            # TODO: Resend UserTimeline for the pins about the topic
+
+            subscriptions = TimelineTopicSubscription.query.filter_by(user_id=user_id)
+            for subscription in subscriptions:
+                subscribe_to_fcm_topic(user_id, subscription.topic)
 
     elif request.method == 'DELETE':
         fcm_token = FcmToken.query.filter_by(user_id=user_id, token=token).first_or_404()
         fcm_token.delete()
 
         db.session.commit()
-        # TODO: Also unsubscribe from user's topics
-        # TODO: Send UserTimeline to delete pins the user no longer has a subscription for
     return 'OK'
 
 
@@ -201,7 +190,7 @@ def shared_pin(pin_id):
                 topic = TimelineTopic.query.filter_by(app_uuid=app_uuid, name=topic_string).one_or_none()
 
                 if topic is None:
-                    topic = TimelineTopic(app_uuid=app_uuid, name=topic_string)
+                    topic = TimelineTopic(app_uuid=app_uuid, name=topic_string, create_time=datetime.datetime.utcnow())
                     db.session.add(topic)
 
                 topics.append(topic)
@@ -305,7 +294,7 @@ def user_subscriptions_manage(topic_string):
 
     topic = TimelineTopic.query.filter_by(app_uuid=app_uuid, name=topic_string).one_or_none()
     if topic is None:
-        topic = TimelineTopic(app_uuid=app_uuid, name=topic_string)
+        topic = TimelineTopic(app_uuid=app_uuid, name=topic_string, create_time=datetime.datetime.utcnow())
         db.session.add(topic)
 
     if request.method == 'POST':
@@ -314,6 +303,16 @@ def user_subscriptions_manage(topic_string):
             subscription = TimelineTopicSubscription(user_id=user_id, topic=topic)
             db.session.add(subscription)
 
+            # Add pins user now has a subscription for
+            for pin in topic.pins:
+                user_timeline = UserTimeline(user_id=subscription.user_id,
+                                             type='timeline.pin.create',
+                                             pin=pin)
+                db.session.add(user_timeline)
+
+            user_timeline = UserTimeline(user_id=user_id, type='timeline.topic.subscription', topic=topic)
+            db.session.add(user_timeline)
+
         db.session.commit()
 
         subscribe_to_fcm_topic(user_id, topic)
@@ -321,6 +320,16 @@ def user_subscriptions_manage(topic_string):
 
     elif request.method == 'DELETE':
         TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).delete()
+
+        # Clean up pins user no longer has a subscription for
+        for pin in topic.pins:
+            user_timeline = UserTimeline(user_id=subscription.user_id,
+                                         type='timeline.pin.delete',
+                                         pin=pin)
+            db.session.add(user_timeline)
+
+        user_timeline = UserTimeline(user_id=user_id, type='timeline.topic.unsubscription', topic=topic)
+        db.session.add(user_timeline)
 
         db.session.commit()
 
@@ -351,6 +360,9 @@ def user_app_glance():
         return api_error(400)
 
     db.session.add(glance)
+
+    user_timeline = UserTimeline(user_id=user_id, type='appglance.slice.create', app_glance=glance)
+    db.session.add(user_timeline)
 
     db.session.commit()
 
