@@ -1,7 +1,9 @@
 from flask import Blueprint, jsonify, url_for, request
+from flask.cli import with_appcontext
 import secrets
 import uuid
 import requests
+import click
 from .models import db, SandboxToken, TimelinePin, UserTimeline, TimelineTopic, TimelineTopicSubscription, AppGlance
 from .utils import get_uid, api_error, pin_valid, glance_valid
 from .settings import config
@@ -60,25 +62,13 @@ def sync():
     if last_timeline is not None:
         last_timeline_id = last_timeline.id
 
-    last_glance_id = request.args.get('glance')
-
-    app_glances = db.session.query(AppGlance).filter_by(user_id=user_id)
-    if last_glance_id is not None:
-        app_glances = app_glances.filter(AppGlance.id > last_glance_id)
-
-    last_glance = app_glances.order_by(AppGlance.id.desc()).first()
-    if last_glance is not None:
-        last_glance_id = last_glance.id
-
     timeline_updates = [user_timeline_item.to_json() for user_timeline_item in user_timeline.order_by(UserTimeline.id.asc())]
-    glances_updates = [glance.to_json() for glance in app_glances.order_by(AppGlance.id.asc())]
 
     result = {
-        "updates": timeline_updates + glances_updates,
-        "syncURL": url_for('api.sync', timeline=last_timeline_id, glance=last_glance_id, _external=True)
+        "updates": timeline_updates,
+        "syncURL": url_for('api.sync', timeline=last_timeline_id, _external=True)
     }
     return jsonify(result)
-
 
 @api.route('/user/pins/<pin_id>', methods=['PUT', 'DELETE'])
 def user_pin(pin_id):
@@ -103,7 +93,7 @@ def user_pin(pin_id):
 
             user_timeline = UserTimeline(user_id=user_id,
                                          type='timeline.pin.create',
-                                         pin=pin)
+                                         item=pin)
             db.session.add(pin)
             db.session.add(user_timeline)
             db.session.commit()
@@ -114,11 +104,11 @@ def user_pin(pin_id):
                 # Clean up old UserTimeline events first.  Note that this
                 # has to be transactional with creating the new one --
                 # which, luckily, it is!
-                UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+                UserTimeline.query.filter(UserTimeline.item == pin).delete()
 
                 user_timeline = UserTimeline(user_id=user_id,
                                              type='timeline.pin.create',
-                                             pin=pin)
+                                             item=pin)
                 db.session.add(pin)
                 db.session.add(user_timeline)
                 db.session.commit()
@@ -131,11 +121,11 @@ def user_pin(pin_id):
 
         # No need to post even old create events, since nobody will render
         # them, after all.
-        UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+        UserTimeline.query.filter(UserTimeline.item == pin).delete()
 
         user_timeline = UserTimeline(user_id=user_id,
                                      type='timeline.pin.delete',
-                                     pin=pin)
+                                     item=pin)
         db.session.add(user_timeline)
         db.session.commit()
     return 'OK'
@@ -169,7 +159,7 @@ def shared_pin(pin_id):
                 topic = TimelineTopic.query.filter_by(app_uuid=app_uuid, name=topic_string).one_or_none()
 
                 if topic is None:
-                    topic = TimelineTopic(app_uuid=app_uuid, name=topic_string)
+                    topic = TimelineTopic(app_uuid=app_uuid, name=topic_string, create_time=datetime.datetime.utcnow())
                     db.session.add(topic)
 
                 topics.append(topic)
@@ -194,7 +184,7 @@ def shared_pin(pin_id):
                 for subscription in topic.subscriptions:
                     user_timeline = UserTimeline(user_id=subscription.user_id,
                                                  type='timeline.pin.create',
-                                                 pin=pin)
+                                                 item=pin)
                     db.session.add(user_timeline)
 
             db.session.commit()
@@ -205,7 +195,7 @@ def shared_pin(pin_id):
                 # Clean up old UserTimeline events first.  Note that this
                 # has to be transactional with creating the new one --
                 # which, luckily, it is!
-                UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+                UserTimeline.query.filter(UserTimeline.item == pin).delete()
 
                 db.session.add(pin)
 
@@ -213,7 +203,7 @@ def shared_pin(pin_id):
                     for subscription in topic.subscriptions:
                         user_timeline = UserTimeline(user_id=subscription.user_id,
                                                      type='timeline.pin.create',
-                                                     pin=pin)
+                                                     item=pin)
                         db.session.add(user_timeline)
 
                 db.session.commit()
@@ -226,13 +216,13 @@ def shared_pin(pin_id):
 
         # No need to post even old create events, since nobody will render
         # them, after all.
-        UserTimeline.query.filter(UserTimeline.pin == pin).delete()
+        UserTimeline.query.filter(UserTimeline.item == pin).delete()
 
         for topic in pin.topics:
             for subscription in topic.subscriptions:
                 user_timeline = UserTimeline(user_id=subscription.user_id,
                                              type='timeline.pin.delete',
-                                             pin=pin)
+                                             item=pin)
                 db.session.add(user_timeline)
 
         db.session.commit()
@@ -265,21 +255,56 @@ def user_subscriptions_manage(topic_string):
 
     topic = TimelineTopic.query.filter_by(app_uuid=app_uuid, name=topic_string).one_or_none()
     if topic is None:
-        topic = TimelineTopic(app_uuid=app_uuid, name=topic_string)
+        topic = TimelineTopic(app_uuid=app_uuid, name=topic_string, create_time=datetime.datetime.utcnow())
         db.session.add(topic)
 
+    subscription = TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).one_or_none()
+
     if request.method == 'POST':
-        subscription = TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).one_or_none()
         if subscription is None:
             subscription = TimelineTopicSubscription(user_id=user_id, topic=topic)
             db.session.add(subscription)
 
-        db.session.commit()
+            # Add pins user now has a subscription for
+            for pin in topic.pins:
+                user_timeline = UserTimeline.query.filter_by(user_id==user_id, item=pin).one_or_none()
+
+                if user_timeline is None:
+                    # TODO: Was this pin formerly deleted for other subscribers? If so, type should be `timeline.pin.delete` or not in there at all
+                    user_timeline = UserTimeline(user_id=user_id,
+                                                 type='timeline.pin.create',
+                                                 item=pin)
+                    db.session.add(user_timeline)
+
+            user_timeline = UserTimeline(user_id=user_id, type='timeline.topic.subscription', item=topic)
+            db.session.add(user_timeline)
+
+            db.session.commit()
 
     elif request.method == 'DELETE':
-        TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).delete()
+        if subscription is not None:
+            TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).delete()
 
-        db.session.commit()
+            # Clean up pins user no longer has a subscription for
+            for pin in topic.pins:
+                pin_subscriptions = TimelineTopicSubscription.query.filter(
+                    TimelineTopicSubscription.user_id == user_id,
+                    TimelineTopicSubscription.topic.in_(pin.topics)
+                ).one_or_none()
+
+                if pin_subscriptions is None:
+                    UserTimeline.query.filter_by(user_id=user_id, item=pin).delete()
+
+                    user_timeline = UserTimeline(user_id=user_id,
+                                                 type='timeline.pin.delete',
+                                                 item=pin)
+
+                    db.session.add(user_timeline)
+
+            user_timeline = UserTimeline(user_id=user_id, type='timeline.topic.unsubscription', item=topic)
+            db.session.add(user_timeline)
+
+            db.session.commit()
 
     return 'OK'
 
@@ -297,14 +322,23 @@ def user_app_glance():
         beeline.add_context_field('glance.failure.cause', 'glance_valid')
         return api_error(400)
 
-    AppGlance.query.filter_by(app_uuid=app_uuid, user_id=user_id).delete()
+    glance = AppGlance.query.filter_by(app_uuid=app_uuid, user_id=user_id).one_or_none()
 
-    glance = AppGlance.from_json(glance_json['slices'], app_uuid, user_id, data_source)
+    if glance is None:
+      glance = AppGlance(app_uuid=app_uuid, user_id=user_id)
+
+    glance = glance.from_json(glance_json['slices'], app_uuid, user_id, data_source)
     if glance is None:
         beeline.add_context_field('glance.failure.cause', 'from_json')
         return api_error(400)
 
     db.session.add(glance)
+
+    UserTimeline.query.filter_by(user_id=user_id, item=glance).delete()
+
+    user_timeline = UserTimeline(user_id=user_id, type='appglance.slice.create', item=glance)
+    db.session.add(user_timeline)
+
     db.session.commit()
     return 'OK'
 
@@ -318,6 +352,20 @@ def page_not_found(e):
 def internal_server_error(e):
     return api_error(500)
 
+@click.command('fill-timelines')
+@with_appcontext
+# Meant to be run once in command line
+def fill_user_timelines():
+    for subscription in TimelineTopicSubscription.query.all():
+        user_timeline = UserTimeline(user_id=subscription.user_id, type='timeline.topic.subscription', item=subscription.topic)
+        db.session.add(user_timeline)
+
+    for glance in AppGlance.query.all():
+        user_timeline = UserTimeline(user_id=glance.user_id, type='appglance.slice.create', item=glance)
+        db.session.add(user_timeline)
+
+    db.session.commit()
 
 def init_api(app, url_prefix='/v1'):
     app.register_blueprint(api, url_prefix=url_prefix)
+    app.cli.add_command(fill_user_timelines)
