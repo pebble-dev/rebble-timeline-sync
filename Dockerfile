@@ -1,4 +1,4 @@
-FROM python:3.6-alpine
+FROM python:3.9-alpine
 RUN apk add --update build-base libffi-dev
 RUN apk add --update postgresql-dev
 ADD . /code

@@ -16,8 +16,6 @@ def send_fcm_message(user_id, data):
 
     response = messaging.send_each_for_multicast(message)
 
-    print(response)
-
     if response.failure_count > 0:
         responses = response.responses
         for idx, resp in enumerate(responses):
@@ -33,9 +31,9 @@ def send_fcm_message_to_topics(topics, data):
         condition=condition,
     )
 
-    response = messaging.send(message)
-
-    if not response.success:
+    try:
+        response = messaging.send(message)
+    except Exception as e:
         return api_error(400)
 
 

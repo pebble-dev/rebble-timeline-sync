@@ -20,31 +20,18 @@ honeycomb.sample_routes['api.sync'] = 10
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
 
-
-def _normalize_private_key_pem(raw: str) -> str:
-    """Turn env-safe PEM into real PEM (newlines, optional base64 wrapper)."""
-    s = raw.strip()
-    if not s:
-        return s
-    # Some loaders leave matching quotes in the value
-    if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
-        s = s[1:-1].strip()
-    s = s.replace("\\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
-    return s.strip()
-
-
 def _get_firebase_credential():
     project_id = os.environ.get("FIREBASE_PROJECT_ID")
     client_email = os.environ.get("FIREBASE_CLIENT_EMAIL")
     private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
     if project_id and client_email and private_key:
-        private_key = _normalize_private_key_pem(private_key)
+        private_key = private_key.replace("\\n", "\n")
         cred_dict = {
             "type": "service_account",
             "project_id": project_id,
-            "private_key": private_key,
             "client_email": client_email,
             "token_uri": "https://oauth2.googleapis.com/token",
+            "private_key": private_key,
         }
         return credentials.Certificate(cred_dict)
 

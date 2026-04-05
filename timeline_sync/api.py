@@ -214,6 +214,7 @@ def shared_pin(pin_id):
             return api_error(410)
 
         if not pin_valid(pin_id, pin_json):
+            print("pin_valid", pin_json)
             beeline.add_context_field('timeline.failure.cause', 'pin_valid')
             return api_error(400)
 
@@ -234,8 +235,7 @@ def shared_pin(pin_id):
                     db.session.add(user_timeline)
 
             db.session.commit()
-
-            # send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
+            send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
         else:  # update pin
             try:
                 pin.update_from_json(pin_json)
@@ -256,7 +256,7 @@ def shared_pin(pin_id):
 
                 db.session.commit()
 
-                # send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
+                send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
             except (KeyError, ValueError):
                 beeline.add_context_field('timeline.failure.cause', 'update_pin')
                 return api_error(400)
@@ -278,7 +278,7 @@ def shared_pin(pin_id):
 
         db.session.commit()
 
-        # send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.delete' })
+        send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.delete' })
 
     return 'OK'
 
@@ -320,16 +320,16 @@ def user_subscriptions_manage(topic_string):
 
         db.session.commit()
 
-        # subscribe_to_fcm_topic(user_id, topic)
-        # send_fcm_message(user_id, { 'type': 'timeline.topic.subscription' })
+        subscribe_to_fcm_topic(user_id, topic)
+        send_fcm_message(user_id, { 'type': 'timeline.topic.subscription' })
 
     elif request.method == 'DELETE':
         TimelineTopicSubscription.query.filter_by(user_id=user_id, topic=topic).delete()
 
         db.session.commit()
 
-        # unsubscribe_from_fcm_topic(user_id, topic)
-        # send_fcm_message(user_id, { 'type': 'timeline.topic.unsubscription' })
+        unsubscribe_from_fcm_topic(user_id, topic)
+        send_fcm_message(user_id, { 'type': 'timeline.topic.unsubscription' })
 
     return 'OK'
 
