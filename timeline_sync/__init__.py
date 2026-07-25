@@ -1,6 +1,10 @@
+import os
+
 from flask import Flask, request
 from werkzeug.middleware.proxy_fix import ProxyFix
 from rws_common import honeycomb
+import firebase_admin
+from firebase_admin import credentials
 
 from .settings import config
 from .api import init_api
@@ -15,6 +19,28 @@ honeycomb.sample_routes['api.sync'] = 10
 
 init_app(app)
 init_api(app)  # Includes both private (timeline-sync) and public (timeline-api) APIs
+
+def _get_firebase_credential():
+    project_id = os.environ.get("FIREBASE_PROJECT_ID")
+    client_email = os.environ.get("FIREBASE_CLIENT_EMAIL")
+    private_key = os.environ.get("FIREBASE_PRIVATE_KEY")
+    if project_id and client_email and private_key:
+        private_key = private_key.replace("\\n", "\n")
+        cred_dict = {
+            "type": "service_account",
+            "project_id": project_id,
+            "client_email": client_email,
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "private_key": private_key,
+        }
+        return credentials.Certificate(cred_dict)
+
+    return None
+
+
+_cred = _get_firebase_credential()
+if _cred is not None:
+    firebase_admin.initialize_app(_cred)
 
 @app.route('/heartbeat')
 @app.route('/timeline-sync/heartbeat')
