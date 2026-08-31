@@ -2,6 +2,7 @@ import requests
 from flask import request, abort, jsonify
 from .settings import config
 import datetime
+import firebase_admin
 
 import beeline
 
@@ -122,3 +123,68 @@ def glance_valid(glance_json):
         return False
     return True
 
+
+def send_fcm_message(user_id, data):
+    if user_id is None:
+        raise ValueError
+
+    fcm_tokens = db.session.query(FcmToken).filter_by(user_id=user_id)
+    tokens = [fcm_token.token for fcm_token in fcm_tokens]
+
+    message = firebase_admin.messaging.Message(
+        data=data,
+        tokens=tokens,
+    )
+
+    response = firebase_admin.messaging.send_each_for_multicast(message)
+
+    if response.failure_count > 0:
+        responses = response.responses
+        for idx, resp in enumerate(responses):
+            if not resp.success:
+                FcmToken.query.filter_by(user_id=user_id, token=tokens[idx]).delete()
+
+
+def send_fcm_message_to_topics(topics, data):
+    condition = ' || '.join([f"'{str(topic.id)}' in topics" for topic in topics])
+
+    message = firebase_admin.messaging.Message(
+        data=data,
+        condition=condition,
+    )
+
+    response = firebase_admin.messaging.send(message)
+
+    if not response.success:
+        return api_error(400)
+
+
+def subscribe_to_fcm_topic(user_id, topic):
+    if user_id is None:
+        raise ValueError
+
+    fcm_tokens = db.session.query(FcmToken).filter_by(user_id=user_id)
+    tokens = [fcm_token.token for fcm_token in fcm_tokens]
+
+    response = firebase_admin.messaging.subscribe_to_topic(tokens, str(topic.id))
+
+    if response.failure_count > 0:
+        responses = response.responses
+        for idx, resp in enumerate(responses):
+            if not resp.success:
+                FcmToken.query.filter_by(user_id=user_id, token=tokens[idx]).delete()
+
+def unsubscribe_from_fcm_topic(user_id, topic):
+    if user_id is None:
+        raise ValueError
+
+    fcm_tokens = db.session.query(FcmToken).filter_by(user_id=user_id)
+    tokens = [fcm_token.token for fcm_token in fcm_tokens]
+
+    response = firebase_admin.messaging.unsubscribe_from_topic(tokens, str(topic.id))
+
+    if response.failure_count > 0:
+        responses = response.responses
+        for idx, resp in enumerate(responses):
+            if not resp.success:
+                FcmToken.query.filter_by(user_id=user_id, token=tokens[idx]).delete()
