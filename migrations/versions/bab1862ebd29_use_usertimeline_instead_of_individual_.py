@@ -86,7 +86,7 @@ def upgrade():
     op.add_column('user_timeline', sa.Column('item_id', postgresql.UUID(as_uuid=True), nullable=True))
     conn.execute(sa.text("""
         UPDATE user_timeline
-        SET    item_type = 'timeline_pins',
+        SET    item_type = 'TimelinePin',
                item_id = pin_id
         WHERE  pin_id IS NOT NULL
     """))
@@ -108,7 +108,7 @@ def downgrade():
     conn.execute(sa.text("""
         UPDATE user_timeline
         SET    pin_id = item_id
-        WHERE  item_type = 'timeline_pins'
+        WHERE  item_type = 'TimelinePin'
     """))
     op.drop_index('user_timeline_userid_itemtype_itemid', table_name='user_timeline')
     op.create_index('user_timeline_userid_pinid', 'user_timeline', ['user_id', 'pin_id'], unique=False)
