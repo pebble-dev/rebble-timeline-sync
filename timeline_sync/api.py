@@ -5,8 +5,9 @@ import uuid
 import requests
 import click
 import datetime
-from .models import db, SandboxToken, TimelinePin, UserTimeline, TimelineTopic, TimelineTopicSubscription, AppGlance
+from .models import db, SandboxToken, TimelinePin, UserTimeline, TimelineTopic, TimelineTopicSubscription, AppGlance, FcmInstance
 from .utils import get_uid, api_error, pin_valid, glance_valid
+from .fcm import send_fcm_message, send_fcm_message_to_topics, subscribe_to_fcm_topic, unsubscribe_from_fcm_topic
 from .settings import config
 
 import beeline
@@ -71,6 +72,35 @@ def sync():
     }
     return jsonify(result)
 
+
+@api.route('/user/fid/<fid>', methods=['PUT', 'DELETE'])
+def fcm_instance():
+    user_id = get_uid()
+
+    if request.method == 'PUT':
+        fcm_instance_json = request.json
+
+        fcm_instance = FcmInstance.query.filter_by(user_id=user_id, fid=fid).one_or_none()
+        if fcm_instance is None:
+            fcm_instance = FcmInstance.from_json(fcm_instance_json, fid, user_id)
+            if fcm_instance is None:
+                return api_error(400)
+
+            db.session.add(fcm_instance)
+            db.session.commit()
+
+            subscriptions = TimelineTopicSubscription.query.filter_by(user_id=user_id)
+            for subscription in subscriptions:
+                subscribe_to_fcm_topic(user_id, subscription.topic)
+
+    elif request.method == 'DELETE':
+        fcm_instance = FcmInstance.query.filter_by(user_id=user_id, fid=fid).first_or_404()
+        fcm_instance.delete()
+
+        db.session.commit()
+    return 'OK'
+
+
 @api.route('/user/pins/<pin_id>', methods=['PUT', 'DELETE'])
 def user_pin(pin_id):
     try:
@@ -98,6 +128,8 @@ def user_pin(pin_id):
             db.session.add(pin)
             db.session.add(user_timeline)
             db.session.commit()
+
+            send_fcm_message(user_id, { 'type': 'timeline.pin.create' })
         else:  # update pin
             try:
                 pin.update_from_json(pin_json)
@@ -113,6 +145,8 @@ def user_pin(pin_id):
                 db.session.add(pin)
                 db.session.add(user_timeline)
                 db.session.commit()
+
+                send_fcm_message(user_id, { 'type': 'timeline.pin.create' })
             except (KeyError, ValueError):
                 beeline.add_context_field('timeline.failure.cause', 'update_pin')
                 return api_error(400)
@@ -129,6 +163,8 @@ def user_pin(pin_id):
                                      item=pin)
         db.session.add(user_timeline)
         db.session.commit()
+
+        send_fcm_message(user_id, { 'type': 'timeline.pin.delete' })
     return 'OK'
 
 
@@ -168,6 +204,10 @@ def shared_pin(pin_id):
         except (ValueError, AttributeError):
             return api_error(410)
 
+        if len(topics) == 0:
+            beeline.add_context_field('timeline.failure.cause', 'no_topic')
+            return api_error(400)
+
         if not pin_valid(pin_id, pin_json):
             beeline.add_context_field('timeline.failure.cause', 'pin_valid')
             return api_error(400)
@@ -189,6 +229,8 @@ def shared_pin(pin_id):
                     db.session.add(user_timeline)
 
             db.session.commit()
+
+            send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
         else:  # update pin
             try:
                 pin.update_from_json(pin_json)
@@ -208,12 +250,15 @@ def shared_pin(pin_id):
                         db.session.add(user_timeline)
 
                 db.session.commit()
+
+                send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.create' })
             except (KeyError, ValueError):
                 beeline.add_context_field('timeline.failure.cause', 'update_pin')
                 return api_error(400)
 
     elif request.method == 'DELETE':
         pin = TimelinePin.query.filter_by(app_uuid=app_uuid, user_id=None, id=pin_id).first_or_404()
+        topics = pin.topics
 
         # No need to post even old create events, since nobody will render
         # them, after all.
@@ -227,6 +272,9 @@ def shared_pin(pin_id):
                 db.session.add(user_timeline)
 
         db.session.commit()
+
+        send_fcm_message_to_topics(topics, { 'type': 'timeline.pin.delete' })
+
     return 'OK'
 
 
@@ -286,6 +334,9 @@ def user_subscriptions_manage(topic_string):
 
             db.session.commit()
 
+            subscribe_to_fcm_topic(user_id, topic)
+            send_fcm_message(user_id, { 'type': 'timeline.topic.subscription' })
+
     elif request.method == 'DELETE':
         if subscription is not None:
             TimelineTopicSubscription.query.filter_by(user_id=user_id, topic_id=topic.id).delete()
@@ -314,6 +365,9 @@ def user_subscriptions_manage(topic_string):
             db.session.add(user_timeline)
 
             db.session.commit()
+
+            unsubscribe_from_fcm_topic(user_id, topic)
+            send_fcm_message(user_id, { 'type': 'timeline.topic.unsubscription' })
 
     return 'OK'
 
@@ -349,6 +403,9 @@ def user_app_glance():
     db.session.add(user_timeline)
 
     db.session.commit()
+
+    send_fcm_message(user_id, { 'type': 'appglance.slice.create' })
+
     return 'OK'
 
 
